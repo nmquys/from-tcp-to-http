@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"strings"
 )
 
 func getLinesChannel(f io.ReadCloser) <-chan string {
@@ -19,18 +19,23 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 		for {
 			data := make([]byte, 8)
 			n, err := f.Read(data)
+
+			if n > 0 {
+				data = data[:n]
+				dataStr := string(data)
+				parts := strings.Split(dataStr, "\n")
+
+				for i := 0; i < len(parts)-1; i++ {
+					out <- currentLine + parts[i]
+					currentLine = ""
+				}
+
+				currentLine += parts[len(parts)-1]
+			}
+
 			if err != nil {
 				break
 			}
-
-			data = data[:n]
-			if i := bytes.IndexByte(data, '\n'); i != -1 {
-				currentLine += string(data[:i])
-				data = data[i+1:]
-				out <- currentLine
-				currentLine = ""
-			}
-			currentLine += string(data)
 		}
 
 		if len(currentLine) != 0 {
@@ -41,17 +46,23 @@ func getLinesChannel(f io.ReadCloser) <-chan string {
 	return out
 }
 
-func main() {
-	listener, err := net.Listen("tcp", ":42069")
-	if err != nil {
+const port = ":42069"
 
+func main() {
+
+	listener, err := net.Listen("tcp", port)
+	if err != nil {
+		log.Fatalf("error listening for TCP traffic: %s\n", err.Error())
 	}
+
+	defer listener.Close()
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			log.Fatal("error", "error", err)
+			log.Fatalf("error: %s\n", err.Error())
 		}
+
 		for line := range getLinesChannel(conn) {
 			fmt.Printf("read: %s\n", line)
 		}
